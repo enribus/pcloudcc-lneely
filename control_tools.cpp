@@ -257,10 +257,10 @@ void setup_app(CLI::App *app) {
 }
 
 int process_command(const std::string &command) {
-  CLI::App app = CLI::App{"pcloudcc-lneely"};
-  setup_app(&app);
+  auto app = std::make_unique<CLI::App>("pcloudcc-lneely");
+  setup_app(app.get());
   try {
-    app.parse(command);
+    app->parse(command);
   } catch (const CLI::ParseError &e) {
     std::vector<std::string> args;
     std::istringstream iss(command);
@@ -275,7 +275,7 @@ int process_command(const std::string &command) {
           << "'. Type 'help' or '?' to get a list of valid commands.";
     if (!args.empty()) {
       try {
-        auto *subcom = app.get_subcommand(args[0]);
+        auto *subcom = app->get_subcommand(args[0]);
         if (subcom) {
           std::cerr << "Usage for '" << args[0] << "':" << std::endl;
           std::cerr << subcom->help() << std::endl;
@@ -297,7 +297,7 @@ int process_command(const std::string &command) {
 }
 
 void process_commands() {
-  CLI::App app = CLI::App{"pcloudcc-lneely"};
+  CLI::App app{"pcloudcc-lneely"};
   setup_app(&app);
 
   using_history();
