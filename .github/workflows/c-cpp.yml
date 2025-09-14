@@ -1,21 +1,155 @@
 name: C/C++ CI
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
+
   build:
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - debian-version: bullseye   # Debian 11
+            release-arch: x86_64
+            release-name: debian11-x86_64
+            build: 'true'
+          # - debian-version: bookworm   # Debian 12
+          #   build: 'true'
+
     container:
-      image: debian:trixie
+      image: debian:${{ matrix.debian-version }}
+
     steps:
-    - uses: actions/checkout@v4
-    - name: Install dependencies
-      run: |
-        apt-get update
-        apt-get install -y build-essential libreadline-dev libudev-dev libfuse-dev libsqlite3-dev zlib1g-dev libboost-dev libboost-system-dev libboost-program-options-dev libmbedtls-dev
-    - name: make
-      run: make
+
+      - uses: actions/checkout@v4
+        with:
+          filter: "blob:none"
+          fetch-tags: 'true'
+          fetch-depth: '1000'
+          submodules: 'true'
+
+      - name: Prereq
+        run: |
+          apt update
+          apt install -y git zip
+
+      - name: Get Version and ReleaseTag
+        shell: bash
+        run: |
+          if [[ "xxx${{ github.event.ref }}" =~ ^xxxrefs/tags/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            RELEASE_TAG="${{ github.event.ref }}"
+            RELEASE_DESCR="Release"
+            RELEASE_PRERELEASE="false"
+          else
+            RELEASE_TAG="latest"
+            RELEASE_DESCR="Development"
+            RELEASE_PRERELEASE="true"
+          fi
+          echo "############### RELEASE_TAG        = ${RELEASE_TAG}"
+          echo "RELEASE_TAG=${RELEASE_TAG}"                                  >> $GITHUB_ENV
+          echo "############### RELEASE_DESCR      = ${RELEASE_DESCR}"
+          echo "RELEASE_DESCR=${RELEASE_DESCR}"                              >> $GITHUB_ENV
+          echo "############### RELEASE_PRERELEASE = ${RELEASE_PRERELEASE}"
+          echo "RELEASE_PRERELEASE=${RELEASE_PRERELEASE}"                    >> $GITHUB_ENV
+          echo "############### showing all known tags"
+          git tag
+          echo "############### Building version '${RELEASE_TAG}'"
+
+      - name: Install dependencies - Debian 11 "bullseye"
+        if: matrix.debian-version == 'bullseye' && matrix.build == 'true'
+        run: |
+          apt update
+          apt install -y \
+            build-essential \
+            libreadline-dev libudev-dev libfuse-dev libsqlite3-dev zlib1g-dev \
+            libboost-dev libboost-system-dev libboost-program-options-dev
+          pwd
+
+      - name: Install dependencies
+        if: matrix.debian-version != 'bullseye' && matrix.build == 'true'
+        run: |
+          apt update
+          apt install -y \
+            build-essential \
+            libreadline-dev libudev-dev libfuse-dev libsqlite3-dev zlib1g-dev \
+            libboost-dev libboost-system-dev libboost-program-options-dev \
+            libmbedtls-dev
+          pwd
+
+      - name: build mbedtls3 - Debian 11 "bullseye"
+        if: matrix.debian-version == 'bullseye' && matrix.build == 'true'
+        run: |
+          apt install -y \
+            git \
+            python3 python3-pip \
+            python3-venv
+          mkdir -p $HOME/src
+          git clone https://github.com/Mbed-TLS/mbedtls/ $HOME/src/mbedtls
+          cd $HOME/src/mbedtls
+          git checkout tags/v3.6.4
+          git submodule update --init
+          python3 -m venv ./venv
+          . ./venv/bin/activate
+          python3 -m pip install -r scripts/basic.requirements.txt
+          make
+          make install
+          ln -s /usr/local/include/mbedtls/ /usr/local/include/mbedtls3
+
+      - name: build pcloudcc - Debian 11 "bullseye"
+        if: matrix.debian-version == 'bullseye' && matrix.build == 'true'
+        run: |
+          sed -i 's/-lmbedtls/-l:libmbedtls.a/;s/-lmbedcrypto/-l:libmbedcrypto.a/;s/-lmbedx509/-l:libmbedx509.a/' Makefile
+          sed -i '5s/$/ -I\/usr\/local\/include/' Makefile
+          sed -i '13s/$/ -L\/usr\/local\/lib\//' Makefile
+          find . -type f -name "*.[ch]" -exec sed -i 's/#include <mbedtls/#include <mbedtls3/' {} \;
+          make clean all
+
+      - name: test pcloudcc
+        if: matrix.debian-version == 'bullseye' && matrix.build == 'true'
+        run: |
+          echo "test: 'pcloudcc --version'"
+          ./pcloudcc --version 2>&1 && true
+          echo "test: 'pcloudcc --help'"
+          ./pcloudcc --help 2>&1 && true
+
+      - name: Create Artifact
+        run: |
+          zip pcloudcc-${{ matrix.release-name }}-${{ env.RELEASE_TAG }}.zip pcloudcc
+          ls -l pcloudcc*
+
+      # - name: Upload Artifact
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: pcloudcc
+      #     path: pcloudcc.zip
+
+
+  # test:
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       include:
+  #         - debian-version: bullseye   # Debian 11
+  #           build: false
+  #         # - debian-version: bookworm   # Debian 12
+  #         #   build: true
+  #   container:
+  #     image: debian:${{ matrix.debian-version }}
+  #   steps:
+  #     - name: download artifact
+  #       uses: actions/download-artifact@v3
+  #       with:
+  #         name: pcloudcc.zip
+  #     - name: unzip artifact
+  #       run: |
+  #         unzip pcloudcc.zip
+  #     - name: run test
+  #       run: |
+  #         ls -l pcloudcc
+  #         # ./pcloudcc --version 2>&1 && true
+  #         # ./pcloudcc --help 2>&1 && true
+
+
+

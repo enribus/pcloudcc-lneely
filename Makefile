@@ -2,7 +2,7 @@ CC		:= gcc
 CXX		:= g++
 AR		:= ar
 
-DIST_CFLAGS	:= $(CFLAGS)
+DIST_CFLAGS	:= $(CFLAGS) -I/usr/local/include
 DIST_CXXFLAGS	:= $(CXXFLAGS)
 
 COMMONFLAGS	= -fsanitize=address
@@ -10,8 +10,8 @@ CFLAGS		= -fPIC $(COMMONFLAGS) -I./pclsync -I/usr/include
 ifneq (,$(filter clang%,$(CC)))
     CFLAGS += -Wthread-safety
 endif
-CXXFLAGS	= $(CFLAGS)
-LIBLDFLAGS	= $(COMMONFLAGS) -lreadline -lpthread -ludev -lsqlite3 -lz -lmbedtls -lmbedx509 -lmbedcrypto
+CXXFLAGS	= $(CFLAGS) -L/usr/local/lib
+LIBLDFLAGS	= $(COMMONFLAGS) -lreadline -lpthread -ludev -lsqlite3 -lz -l:libmbedtls.a -l:libmbedx509.a -l:libmbedcrypto.a
 EXECLDFLAGS	= $(COMMONFLAGS) -lboost_program_options -lfuse
 
 SCAN		:= 0
