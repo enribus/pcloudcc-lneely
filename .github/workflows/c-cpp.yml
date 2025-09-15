@@ -5,8 +5,74 @@ on:
 
 jobs:
 
+#### Prepare build definitions
+  get_release_definitions:
+    name: Get Release definitions
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: "blob:none"
+          fetch-tags: 'true'
+          fetch-depth: '1000'
+          submodules: 'true'
+      - name: Define Release Strategy
+        id: DefineReleaseStrategy
+        run: |
+          pip install python-kacl
+          # GIT_REV_NAME: as seen in https://stackoverflow.com/a/11489642
+          # Creates a Stable Release only if tags are pushed at the same time as the relevant commit:
+          #   git push origin <my branch> --tags
+          # Tag can be lightweight or annotated.
+          GIT_REV_NAME=$(git name-rev --name-only --tags --no-undefined HEAD 2>/dev/null || true | sed -n 's/^\([^^~]\{1,\}\)\(\^0\)\{0,1\}$/\1/p')
+          echo "############### GIT_REV_NAME       = ${GIT_REV_NAME}"
+          # Stable Release: regex checks exact match to '^v<maj>.<min>.<patch>$'
+          if [[ "xxx${GIT_REV_NAME}" =~ ^xxxv[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "############### Matched an exact Stable Release Tag"
+            RELEASE_TAG="${GIT_REV_NAME}"
+            RELEASE_DESCR="Stable Release"
+            RELEASE_PRERELEASE="false"
+            kacl-cli get ${GIT_REV_NAME:1} > RELEASE_LOG.md \
+              || echo "Release description unavailable" > RELEASE_LOG.md
+          elif [[ "xxx${GIT_REV_NAME}" =~ ^xxxv[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "############### Matched an RC Release Tag"
+            RELEASE_TAG="${GIT_REV_NAME}"
+            RELEASE_DESCR="Release Candidate"
+            RELEASE_PRERELEASE="true"
+            kacl-cli get ${GIT_REV_NAME:1} > RELEASE_LOG.md \
+              || echo "Release description unavailable" > RELEASE_LOG.md
+          else
+            echo "############### Unmatched release Tags, going to 'latest'"
+            kacl-cli get unreleased > RELEASE_LOG.md \
+              || echo "Release description unavailable" > RELEASE_LOG.md
+            RELEASE_TAG="latest"
+            RELEASE_DESCR="Development Release"
+            RELEASE_PRERELEASE="true"
+          fi
+          echo "############### RELEASE_TAG        = ${RELEASE_TAG}"
+          echo "RELEASE_TAG=${RELEASE_TAG}"                                  >> $GITHUB_OUTPUT
+          echo "############### RELEASE_DESCR      = ${RELEASE_DESCR}"
+          echo "RELEASE_DESCR=${RELEASE_DESCR}"                              >> $GITHUB_OUTPUT
+          echo "############### RELEASE_PRERELEASE = ${RELEASE_PRERELEASE}"
+          echo "RELEASE_PRERELEASE=${RELEASE_PRERELEASE}"                    >> $GITHUB_OUTPUT
+          echo "############### showing all known tags"
+          git tag
+          echo "############### Building version '${RELEASE_TAG}'"
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          retention-days: 1
+          name: definitions
+          path: RELEASE_LOG.md
+    outputs:
+      RELEASE_TAG: ${{ steps.DefineReleaseStrategy.outputs.RELEASE_TAG }}
+      RELEASE_DESCR: ${{ steps.DefineReleaseStrategy.outputs.RELEASE_DESCR }}
+      RELEASE_PRERELEASE: ${{ steps.DefineReleaseStrategy.outputs.RELEASE_PRERELEASE }}
+
   build:
     runs-on: ubuntu-latest
+    needs:
+      - get_release_definitions
 
     strategy:
       matrix:
@@ -160,7 +226,7 @@ jobs:
     name: Upload Artifacts to Releases
     runs-on: ubuntu-22.04
     needs:
-      # - prepare_artifacts_cache
+      - get_release_definitions
       - build
     env:
       RELEASE_TAG: ${{needs.get_release_definitions.outputs.RELEASE_TAG}}
