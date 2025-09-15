@@ -120,11 +120,12 @@ jobs:
           zip pcloudcc-${{ matrix.release-name }}-${{ env.RELEASE_TAG }}.zip pcloudcc
           ls -l pcloudcc*
 
-      # - name: Upload Artifact
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: pcloudcc
-      #     path: pcloudcc.zip
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          retention-days: 1
+          name: pcloudcc-${{ matrix.release-name }}-${{ env.RELEASE_TAG }}
+          path: pcloudcc-${{ matrix.release-name }}-${{ env.RELEASE_TAG }}.zip
 
 
   # test:
@@ -154,3 +155,31 @@ jobs:
 
 
 
+#### Upload artifacts to Releases
+  upload_artifacts:
+    name: Upload Artifacts to Releases
+    runs-on: ubuntu-22.04
+    needs:
+      # - prepare_artifacts_cache
+      - build
+    env:
+      RELEASE_TAG: ${{needs.get_release_definitions.outputs.RELEASE_TAG}}
+      RELEASE_DESCR: ${{needs.get_release_definitions.outputs.RELEASE_DESCR}}
+      RELEASE_PRERELEASE: ${{needs.get_release_definitions.outputs.RELEASE_PRERELEASE}}
+    steps:
+      - name: Restore Artifacts Cache
+        uses: actions/download-artifact@v4.3.0
+        with:
+          path: artifacts
+      - name: list Artifacts
+        run: |
+          ls -la artifacts/*/*
+      - name: ${{ env.RELEASE_TAG }} ${{ env.RELEASE_DESCR }}
+        uses: softprops/action-gh-release@v2.3.3
+        with:
+          prerelease: ${{ env.RELEASE_PRERELEASE}}
+          tag_name: ${{ env.RELEASE_TAG }}
+          make_latest: true
+          # body_path: artifacts/definitions/RELEASE_LOG.md
+          files: |
+            artifacts/*/*.zip
